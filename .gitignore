@@ -232,3 +232,6 @@ __marimo__/
 # Trained model artifacts (e.g. AutoGluon)
 **/models/
 AutogluonModels/
+
+# Dedicated AutoGluon+ray env (Python 3.12)
+.venv-ag/
