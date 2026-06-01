@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Kaggle sync build output
+.build/
+
+# Kaggle dataset / competition data directories
+**/data/
