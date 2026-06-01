@@ -29,7 +29,7 @@ from features import add_colors, FEAT_COLS, TARGET, encode_target
 MODEL_DIR = PROJECT_DIR / "models" / "autogluon"
 
 
-def train_and_evaluate(time_limit=2400, dry_run=False):
+def train_and_evaluate(time_limit=2400, preset=None, dry_run=False):
     print("=== Step 1: Loading data ===")
     train_df = add_colors(pl.read_csv(DATA_DIR / "train.csv"))
     test_df = add_colors(pl.read_csv(DATA_DIR / "test.csv"))
@@ -39,7 +39,8 @@ def train_and_evaluate(time_limit=2400, dry_run=False):
     test_pdf = test_df.select(FEAT_COLS).to_pandas()
     y, _, class_names = encode_target(train_df)  # canonical order: [GALAXY, QSO, STAR]
 
-    print(f"\n=== Step 2: AutoGluon fit (balanced_accuracy, {'dry-run' if dry_run else 'GBDT stack'}) ===")
+    mode = "dry-run" if dry_run else (preset if preset else "GBDT stack")
+    print(f"\n=== Step 2: AutoGluon fit (balanced_accuracy, {mode}) ===")
     predictor = TabularPredictor(
         label=TARGET,
         eval_metric="balanced_accuracy",
@@ -50,12 +51,17 @@ def train_and_evaluate(time_limit=2400, dry_run=False):
         # Fast path: a couple bagged GBMs, no stacking — still yields OOF.
         predictor.fit(train_pdf, time_limit=120, hyperparameters={"GBM": {}},
                       num_bag_folds=3, num_stack_levels=0)
+    elif preset:
+        # Full preset (e.g. best_quality): the whole model zoo + multi-layer stacking, to
+        # study what AutoGluon ensembles and how much stacking helps. Slow under sequential
+        # (no-ray) fold fitting on 577k rows, so give it a generous time_limit; AG builds
+        # the best ensemble from whatever finishes. dynamic_stacking=False keeps the DyStack
+        # sub-fit from ~2x-ing the runtime (and from the earlier corruption failure mode).
+        predictor.fit(train_pdf, time_limit=time_limit, presets=preset,
+                      dynamic_stacking=False)
     else:
-        # Explicit GBDT stack instead of a preset: the full good_quality lineup (~11
-        # model families x 8 bagged folds) starves under sequential fold fitting (ray has
-        # no py3.13 wheel) and trains nothing. The three GBDTs are what's competitive on
-        # this data anyway. dynamic_stacking=False avoids the DyStack sub-fit that doubled
-        # work and corrupted the predictor ("Learner is already fit").
+        # Default: explicit GBDT stack. The full preset lineup starves under sequential
+        # fold fitting, and the three GBDTs are what's competitive on this data anyway.
         predictor.fit(
             train_pdf,
             time_limit=time_limit,
@@ -76,19 +82,22 @@ def train_and_evaluate(time_limit=2400, dry_run=False):
     print(f"Balanced accuracy after class-weight tuning: {tuned:.5f}  "
           f"(weights={dict(zip(class_names, weights.round(3)))})")
 
-    save_oof_predictions(oof_probs, "autogluon")
+    suffix = f"_{preset}" if preset else ""  # keep preset runs from clobbering the default
+    save_oof_predictions(oof_probs, f"autogluon{suffix}")
 
     print("\n=== Step 5: Test predictions + submission ===")
     test_probs = predictor.predict_proba(test_pdf)[class_names].to_numpy()
     test_preds = np.asarray(class_names)[(test_probs * weights).argmax(1)]
-    save_submission(test_df["id"], test_preds, "submission_autogluon.csv")
+    save_submission(test_df["id"], test_preds, f"submission_autogluon{suffix}.csv")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AutoGluon benchmark for stellar classification")
     parser.add_argument("--time-limit", type=int, default=2400,
                         help="AutoGluon fit time limit in seconds (default 2400)")
+    parser.add_argument("--preset", type=str, default=None,
+                        help="AutoGluon preset (e.g. best_quality). Omit for the explicit GBDT stack.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Fast bagged-GBM-only fit to validate the pipeline")
     args = parser.parse_args()
-    train_and_evaluate(time_limit=args.time_limit, dry_run=args.dry_run)
+    train_and_evaluate(time_limit=args.time_limit, preset=args.preset, dry_run=args.dry_run)
