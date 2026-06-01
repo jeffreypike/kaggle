@@ -29,7 +29,7 @@ from features import add_colors, FEAT_COLS, TARGET, encode_target
 MODEL_DIR = PROJECT_DIR / "models" / "autogluon"
 
 
-def train_and_evaluate(time_limit=600, presets="good_quality", dry_run=False):
+def train_and_evaluate(time_limit=2400, dry_run=False):
     print("=== Step 1: Loading data ===")
     train_df = add_colors(pl.read_csv(DATA_DIR / "train.csv"))
     test_df = add_colors(pl.read_csv(DATA_DIR / "test.csv"))
@@ -39,7 +39,7 @@ def train_and_evaluate(time_limit=600, presets="good_quality", dry_run=False):
     test_pdf = test_df.select(FEAT_COLS).to_pandas()
     y, _, class_names = encode_target(train_df)  # canonical order: [GALAXY, QSO, STAR]
 
-    print(f"\n=== Step 2: AutoGluon fit (balanced_accuracy, {'dry-run' if dry_run else presets}) ===")
+    print(f"\n=== Step 2: AutoGluon fit (balanced_accuracy, {'dry-run' if dry_run else 'GBDT stack'}) ===")
     predictor = TabularPredictor(
         label=TARGET,
         eval_metric="balanced_accuracy",
@@ -51,7 +51,19 @@ def train_and_evaluate(time_limit=600, presets="good_quality", dry_run=False):
         predictor.fit(train_pdf, time_limit=120, hyperparameters={"GBM": {}},
                       num_bag_folds=3, num_stack_levels=0)
     else:
-        predictor.fit(train_pdf, time_limit=time_limit, presets=presets)
+        # Explicit GBDT stack instead of a preset: the full good_quality lineup (~11
+        # model families x 8 bagged folds) starves under sequential fold fitting (ray has
+        # no py3.13 wheel) and trains nothing. The three GBDTs are what's competitive on
+        # this data anyway. dynamic_stacking=False avoids the DyStack sub-fit that doubled
+        # work and corrupted the predictor ("Learner is already fit").
+        predictor.fit(
+            train_pdf,
+            time_limit=time_limit,
+            hyperparameters={"GBM": {}, "XGB": {}, "CAT": {}},
+            num_bag_folds=5,
+            num_stack_levels=1,
+            dynamic_stacking=False,
+        )
 
     print("\n=== Step 3: Leaderboard ===")
     print(predictor.leaderboard(silent=True))
@@ -74,11 +86,9 @@ def train_and_evaluate(time_limit=600, presets="good_quality", dry_run=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AutoGluon benchmark for stellar classification")
-    parser.add_argument("--time-limit", type=int, default=600,
-                        help="AutoGluon fit time limit in seconds (default 600)")
-    parser.add_argument("--presets", type=str, default="good_quality",
-                        help="AutoGluon presets (e.g. medium_quality, good_quality, best_quality)")
+    parser.add_argument("--time-limit", type=int, default=2400,
+                        help="AutoGluon fit time limit in seconds (default 2400)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Fast bagged-GBM-only fit to validate the pipeline")
     args = parser.parse_args()
-    train_and_evaluate(time_limit=args.time_limit, presets=args.presets, dry_run=args.dry_run)
+    train_and_evaluate(time_limit=args.time_limit, dry_run=args.dry_run)

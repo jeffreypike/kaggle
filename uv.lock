@@ -1289,6 +1289,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "scikit-learn" },
     { name = "seaborn" },
+    { name = "setuptools" },
     { name = "xgboost" },
 ]
 
@@ -1309,6 +1310,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "scikit-learn", specifier = ">=1.5.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "setuptools", specifier = ">=82.0.1" },
     { name = "xgboost", specifier = ">=2.1.4" },
 ]
 
