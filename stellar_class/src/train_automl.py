@@ -1,11 +1,13 @@
-"""FLAML AutoML baseline, optimizing the competition metric (balanced accuracy).
+"""FLAML AutoML probe: which gradient-boosting library wins on this data?
 
-FLAML searches estimators/hyperparameters on the standardized folds; the best estimator
+FLAML searches lgbm/xgboost/catboost on a fast internal holdout (statistically stable
+at ~577k rows, and ~5x more trials per minute than 5-fold CV search). The best estimator
 is then refit per fold (via sklearn.clone, so its exact tuned hyperparameters carry over
-without manual reconstruction) to produce comparable OOF predictions.
+without manual reconstruction) to produce OOF predictions on the standardized folds for a
+fair comparison with the other models.
 
 Run from anywhere:
-    python stellar_class/src/train_automl.py --time-budget 300
+    python stellar_class/src/train_automl.py --time-budget 600
     python stellar_class/src/train_automl.py --dry-run     # ~10s smoke test
 """
 import argparse
@@ -20,11 +22,10 @@ from flaml import AutoML
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from validation import (load_data_with_folds, get_custom_cv, evaluate_predictions,
-                        save_oof_predictions, save_submission, tune_class_weights,
-                        PredefinedFoldsSplitter, DATA_DIR)
+                        save_oof_predictions, save_submission, tune_class_weights, DATA_DIR)
 from features import prepare_features, encode_target
 
-ESTIMATOR_LIST = ["lgbm", "xgboost", "rf", "extra_tree"]
+ESTIMATOR_LIST = ["lgbm", "xgboost", "catboost"]
 
 
 def balanced_accuracy_metric(X_val, y_val, estimator, labels, X_train, y_train,
@@ -47,15 +48,15 @@ def train_and_evaluate(time_budget=300, dry_run=False):
     cv = get_custom_cv(train_df)
 
     budget = 10 if dry_run else time_budget
-    print(f"\n=== Step 3: FLAML search (balanced accuracy, budget {budget}s) ===")
+    print(f"\n=== Step 3: FLAML search (balanced accuracy, holdout, budget {budget}s) ===")
     automl = AutoML()
     automl.fit(
         X_train=X, y_train=y,
         task="multiclass",
         metric=balanced_accuracy_metric,
         estimator_list=ESTIMATOR_LIST,
-        split_type=PredefinedFoldsSplitter(train_df["fold"].to_numpy()),
-        eval_method="cv",
+        eval_method="holdout",  # fast search; final OOF uses standardized folds below
+        split_ratio=0.1,
         time_budget=budget,
         seed=42,
         verbose=1,

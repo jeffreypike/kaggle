@@ -228,3 +228,7 @@ __marimo__/
 
 # Generated Kaggle submission files
 **/submissions/
+
+# Trained model artifacts (e.g. AutoGluon)
+**/models/
+AutogluonModels/
