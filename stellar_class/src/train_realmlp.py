@@ -48,7 +48,10 @@ CONFIG = dict(
 
 
 # ── Feature engineering (faithful port of the reference cell) ──────────────────
-COLOR_PAIRS = [("u", "g"), ("u", "r")]
+# Color pairs as features. The reference used only u-g, u-r; a single-seed CV screen
+# showed adding more colors lifts RealMLP (+~0.0017), while redshift ratios / abs-mag
+# proxies hurt (redshift's near-zero tail makes them noisy), so only colors are added.
+COLOR_PAIRS = [("u", "g"), ("u", "r"), ("g", "r"), ("r", "i"), ("i", "z"), ("g", "i")]
 IMPORTANT_COMBOS = sorted([("alpha_cat_", "delta_cat_"), ("u_cat_", "z_cat_")])
 
 
