@@ -82,7 +82,7 @@ C('''predictor = TabularPredictor(
 predictor.fit(
     train_data,
     presets="best_quality",
-    time_limit=3600,
+    time_limit=14400,  # 4h guardrail (well under the 12h session); stops early if done.
     dynamic_stacking=False,
 )
 predictor.leaderboard(silent=True)''')
