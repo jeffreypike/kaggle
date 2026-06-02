@@ -35,7 +35,7 @@ from validation import (load_data_with_folds, get_custom_cv, evaluate_prediction
 PI = math.pi
 
 CONFIG = dict(
-    n_ens=8, embed_dim=7, onehot_thresh=10, hidden_dims=[1024, 1024, 1024],
+    n_ens=8, embed_dim=7, onehot_thresh=10, hidden_dims=[512, 512, 512],
     dropout=0.05, p_drop_sched="expm4t", add_front_scale=True,
     pbld_hidden_dim=20, pbld_out_dim=5, pbld_freq_scale=5.0, pbld_lr_factor=0.093,
     lr=0.01, mom=0.9, sq_mom=0.98, lr_sched="flat_cos", flat_ratio=0.3,
@@ -43,7 +43,7 @@ CONFIG = dict(
     lr_bias_mult=0.1, weight_decay=0.013, wd_scale_mult=0.1, wd_bias_mult=0.5,
     grad_clip=1.0, ls_eps=0.04, ls_eps_sched="cos",
     tfms=["median_center", "robust_scale"],
-    epochs=8, train_bs=256, eval_bs=10240, seed=42,   # wide+epochs8: HPO showed ref underfits 577k
+    epochs=6, train_bs=256, eval_bs=10240, seed=42,
 )
 
 
