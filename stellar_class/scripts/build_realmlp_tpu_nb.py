@@ -116,26 +116,35 @@ def build_train_fn(graphdef, tx, cfg, n_train, n_batches, n_classes):
 
     def train_fn(params, key, Xtr_n, Xtr_c, ytr, Xva_n, Xva_c, yva, Xte_n, Xte_c, cw):
         opt_state = tx.init(params)
-        best_score = jnp.asarray(-1.0); best_params = params
-        for epoch in range(epochs):
-            key, kp = jax.random.split(key)
-            perm = jax.random.permutation(kp, n_train)[:n_batches * bs].reshape(n_batches, bs)
-            def step(carry, b):
-                params, opt_state, key = carry
-                step_i = epoch * n_batches + b
-                progress = step_i / total_steps
-                ls = cfg["ls_eps"] * sched_factor(progress, cfg["ls_eps_sched"], cfg["flat_ratio"])
-                drop = cfg["dropout"] * sched_factor(progress, cfg["p_drop_sched"], cfg["flat_ratio"])
-                key, kd = jax.random.split(key)
-                idx = perm[b]
-                g = jax.grad(loss_fn)(params, Xtr_n[idx], Xtr_c[idx], ytr[idx], ls, drop, kd, cw)
-                updates, opt_state = tx.update(g, opt_state, params)
-                return (params := optax.apply_updates(params, updates), opt_state, key), None
-            (params, opt_state, key), _ = jax.lax.scan(step, (params, opt_state, key), jnp.arange(n_batches))
-            score = bal_acc(yva, predict(params, Xva_n, Xva_c).argmax(1), n_classes)
-            improved = score > best_score
-            best_score = jnp.where(improved, score, best_score)
-            best_params = jax.tree.map(lambda bp, p: jnp.where(improved, p, bp), best_params, params)
+        # ONE scan over all epochs*batches keeps the compiled graph small (vs unrolling
+        # the epoch loop, which makes TPU compilation blow up). Eval + reshuffle happen
+        # at epoch boundaries via lax.cond.
+        def step(carry, step_i):
+            params, opt_state, key, perm, best_score, best_params = carry
+            b = step_i % n_batches
+            idx = jax.lax.dynamic_slice_in_dim(perm, b * bs, bs, axis=0)
+            progress = step_i / total_steps
+            ls = cfg["ls_eps"] * sched_factor(progress, cfg["ls_eps_sched"], cfg["flat_ratio"])
+            drop = cfg["dropout"] * sched_factor(progress, cfg["p_drop_sched"], cfg["flat_ratio"])
+            key, kd, kperm = jax.random.split(key, 3)
+            g = jax.grad(loss_fn)(params, Xtr_n[idx], Xtr_c[idx], ytr[idx], ls, drop, kd, cw)
+            updates, opt_state = tx.update(g, opt_state, params)
+            params = optax.apply_updates(params, updates)
+            at_boundary = (b + 1) == n_batches
+            def do_eval(_):
+                score = bal_acc(yva, predict(params, Xva_n, Xva_c).argmax(1), n_classes)
+                imp = score > best_score
+                return (jnp.where(imp, score, best_score),
+                        jax.tree.map(lambda bp, p: jnp.where(imp, p, bp), best_params, params))
+            best_score, best_params = jax.lax.cond(
+                at_boundary, do_eval, lambda _: (best_score, best_params), None)
+            perm = jax.lax.cond(at_boundary, lambda: jax.random.permutation(kperm, n_train), lambda: perm)
+            return (params, opt_state, key, perm, best_score, best_params), None
+
+        key, k0 = jax.random.split(key)
+        perm0 = jax.random.permutation(k0, n_train)
+        init = (params, opt_state, key, perm0, jnp.asarray(-1.0), params)
+        (*_, best_score, best_params), _ = jax.lax.scan(step, init, jnp.arange(total_steps))
         return predict(best_params, Xva_n, Xva_c), predict(best_params, Xte_n, Xte_c), best_score
 
     return train_fn''')
