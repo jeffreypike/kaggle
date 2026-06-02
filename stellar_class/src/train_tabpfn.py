@@ -30,7 +30,8 @@ from sklearn.model_selection import train_test_split
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from validation import (load_data_with_folds, get_custom_cv, evaluate_predictions,
-                        save_oof_predictions, save_submission, tune_class_weights, DATA_DIR)
+                        save_oof_predictions, save_submission, tune_class_weights, DATA_DIR,
+                        PREDICTIONS_DIR)
 from features import NUM_COLS, CAT_COLS, encode_target
 
 RAW_FEATS = NUM_COLS + CAT_COLS  # raw frame: categoricals passed as-is, TabPFN encodes them
@@ -113,6 +114,7 @@ def train_and_evaluate(max_context=None, device="cuda", n_estimators=2,
     clf.fit(X.iloc[ctx], y[ctx])
     test_proba = clf.predict_proba(X_test)
     _free_gpu()
+    np.save(PREDICTIONS_DIR / "test_tabpfn.npy", test_proba)   # for blended submissions
     test_preds = le.inverse_transform((test_proba * weights).argmax(1))
     save_submission(test_df["id"], test_preds, "submission_tabpfn.csv")
 

@@ -11,7 +11,8 @@ from lightgbm import LGBMClassifier, early_stopping
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from validation import (load_data_with_folds, get_custom_cv, evaluate_predictions,
-                        save_oof_predictions, save_submission, tune_class_weights, DATA_DIR)
+                        save_oof_predictions, save_submission, tune_class_weights, DATA_DIR,
+                        PREDICTIONS_DIR)
 from features import prepare_features, encode_target, CAT_COLS
 
 LGB_PARAMS = {
@@ -64,6 +65,7 @@ def train_and_evaluate():
           f"(weights={dict(zip(classes, weights.round(3)))})")
 
     save_oof_predictions(oof_probs, "lgb")
+    np.save(PREDICTIONS_DIR / "test_lgb.npy", test_probs)   # for blended submissions
     test_preds = le.inverse_transform((test_probs * weights).argmax(1))
     save_submission(test_df["id"], test_preds, "submission_lgb.csv")
 

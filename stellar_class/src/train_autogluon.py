@@ -23,7 +23,7 @@ from autogluon.tabular import TabularPredictor
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from validation import (evaluate_predictions, save_oof_predictions, save_submission,
-                        tune_class_weights, DATA_DIR, PROJECT_DIR)
+                        tune_class_weights, DATA_DIR, PROJECT_DIR, PREDICTIONS_DIR)
 from features import add_colors, FEAT_COLS, TARGET, encode_target
 
 MODEL_DIR = PROJECT_DIR / "models" / "autogluon"
@@ -87,6 +87,7 @@ def train_and_evaluate(time_limit=2400, preset=None, dry_run=False):
 
     print("\n=== Step 5: Test predictions + submission ===")
     test_probs = predictor.predict_proba(test_pdf)[class_names].to_numpy()
+    np.save(PREDICTIONS_DIR / f"test_autogluon{suffix}.npy", test_probs)   # for blended submissions
     test_preds = np.asarray(class_names)[(test_probs * weights).argmax(1)]
     save_submission(test_df["id"], test_preds, f"submission_autogluon{suffix}.csv")
 
