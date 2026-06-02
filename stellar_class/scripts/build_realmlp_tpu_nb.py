@@ -19,16 +19,20 @@ M = lambda s: cells.append(nbf.v4.new_markdown_cell(s))
 
 M("""# 🌌 RealMLP-TD × 5 seeds (Flax NNX, TPU)
 
-Trains the RealMLP-TD model (the top single model for this competition) with **5 seeds**
-on the standardized 5-fold splits, averages them into a lower-variance member, and writes:
-`oof_realmlp_ens.npy`, `test_realmlp_ens.npy` (download these to blend with AutoGluon
-locally) and `submission.csv` (RealMLP-only).
+A from-scratch **Flax NNX** port of RealMLP-TD — a strong tabular MLP (tuned defaults:
+PBLD periodic numerical embeddings, NTK-parametrized linears, an internal ensemble, and
+scheduled lr / dropout / label-smoothing). It trains **5 seeds** on a fixed stratified
+5-fold split and averages them into a lower-variance model.
+
+Outputs: `submission.csv`, plus the out-of-fold and test class probabilities
+(`oof_realmlp_ens.npy`, `test_realmlp_ens.npy`) — handy if you want to use this as a
+member in a stacking ensemble.
 
 **Kaggle setup:** accelerator **TPU VM v3-8**, Internet **On** (to pip-install flax/optax),
 and add the `playground-series-s6e6` competition data.
 
-*Note:* the training loop is single-device, so it uses one TPU core (small batch + small
-model suit TPU poorly). It runs and uses TPU quota; it won't be 8× fast. Each seed's
+*Note:* the training loop is single-device, so it uses one TPU core (a small batch + small
+model suit TPU poorly). It runs and uses TPU quota but won't be 8× fast. Each seed's
 OOF/test is saved as it finishes, so a session timeout won't lose completed seeds.""")
 
 M("## 1. Install")
@@ -53,7 +57,7 @@ from sklearn.metrics import balanced_accuracy_score
 
 print("jax", jax.__version__, "| flax", __import__("flax").__version__, "| devices:", jax.devices())""")
 
-M("## 3. RealMLP-TD model (embedded verbatim from `src/train_realmlp.py`)")
+M("## 3. RealMLP-TD model")
 C(MODEL_BLOCK)
 
 M("## 4. Data, folds, feature engineering")
@@ -71,8 +75,8 @@ cmap_y = {c: i for i, c in enumerate(classes)}
 y = train_df["class"].map(cmap_y).to_numpy()
 n_classes = len(classes)
 
-# Standardized folds — must match the local pipeline (StratifiedKFold 5, shuffle, rs=42)
-# so the OOF rows align with the AutoGluon OOF for blending.
+# Fixed stratified 5-fold split (shuffle, seed 42): reproducible out-of-fold predictions,
+# reusable as a stacking input.
 folds = np.zeros(len(y), dtype=int)
 for i, (_, va) in enumerate(StratifiedKFold(5, shuffle=True, random_state=42).split(np.zeros(len(y)), y)):
     folds[va] = i
@@ -152,22 +156,21 @@ np.save(OUT / "test_realmlp_ens.npy", test_ens)
 
 raw = balanced_accuracy_score(y, oof_ens.argmax(1))
 weights, tuned = tune_class_weights(y, oof_ens)
-print(f"\\n=== {len(SEEDS)}-seed ensemble OOF: raw={raw:.5f}  tuned={tuned:.5f}  (vs single-seed ~0.96761) ===")
+print(f"\\n=== {len(SEEDS)}-seed ensemble OOF: raw={raw:.5f}  tuned={tuned:.5f} ===")
 print(f"class multipliers: {dict(zip(classes, weights.round(3)))}")
 
 preds = np.asarray(classes)[(test_ens * weights).argmax(1)]
 pd.DataFrame({"id": test_df["id"], "class": preds}).to_csv(OUT / "submission.csv", index=False)
 print("wrote submission.csv, oof_realmlp_ens.npy, test_realmlp_ens.npy")''')
 
-M("""## 7. Next
+M("""## Outputs
 
-Download `oof_realmlp_ens.npy` and `test_realmlp_ens.npy` into the local repo's
-`predictions/` (as `oof_realmlp_ens.npy` / `test_realmlp_ens.npy`), then blend with
-AutoGluon:
+- **`submission.csv`** — RealMLP 5-seed ensemble predictions.
+- **`oof_realmlp_ens.npy`** / **`test_realmlp_ens.npy`** — out-of-fold and test class
+  probabilities (columns sorted GALAXY/QSO/STAR, rows in train/test order). Drop-in as a
+  member for a stacking ensemble.
 
-```
-python src/blend.py realmlp_ens autogluon_best_quality --name blend_ens_ag
-```""")
+If this notebook helped, an upvote is appreciated 🙂""")
 
 nb.cells = cells
 nbf.write(nb, "notebooks/stellar-realmlp-5seed-tpu.ipynb")
