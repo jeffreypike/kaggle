@@ -355,8 +355,12 @@ def fit_fold(Xtr_n, Xtr_c, ytr, Xva_n, Xva_c, yva, cat_dims, n_classes, cfg):
     return best_probs, best_score, model
 
 
-def main(smoke=False, rows=6000, epochs=1):
+def main(smoke=False, rows=6000, epochs=1, seed=None):
     cfg = dict(CONFIG)
+    sfx = ""
+    if seed is not None:
+        cfg["seed"] = seed
+        sfx = f"_s{seed}"   # suffix outputs so multiple seeds don't clobber (for seed-ensembling)
     train_df = load_data_with_folds().to_pandas()
     test_df = pd.read_csv(DATA_DIR / "test.csv")
     classes = sorted(train_df["class"].unique())
@@ -417,10 +421,10 @@ def main(smoke=False, rows=6000, epochs=1):
         print("[smoke] OK"); return
     weights, tuned = tune_class_weights(y, oof)
     print(f"Balanced accuracy after class-weight tuning: {tuned:.5f}  (weights={dict(zip(classes, weights.round(3)))})")
-    save_oof_predictions(oof, "realmlp")
-    np.save(PREDICTIONS_DIR / "test_realmlp.npy", test_probs)   # for blended submissions
+    save_oof_predictions(oof, f"realmlp{sfx}")
+    np.save(PREDICTIONS_DIR / f"test_realmlp{sfx}.npy", test_probs)   # for blended submissions
     preds = np.asarray(classes)[(test_probs * weights).argmax(1)]
-    save_submission(test_df["id"], preds, "submission_realmlp.csv")
+    save_submission(test_df["id"], preds, f"submission_realmlp{sfx}.csv")
 
 
 if __name__ == "__main__":
@@ -428,5 +432,7 @@ if __name__ == "__main__":
     ap.add_argument("--smoke", action="store_true", help="reduced CPU sanity run")
     ap.add_argument("--rows", type=int, default=6000, help="subsample size in smoke mode")
     ap.add_argument("--epochs", type=int, default=1, help="epochs in smoke mode")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="override seed; suffixes outputs (_s<seed>) for seed-ensembling")
     args = ap.parse_args()
-    main(smoke=args.smoke, rows=args.rows, epochs=args.epochs)
+    main(smoke=args.smoke, rows=args.rows, epochs=args.epochs, seed=args.seed)
