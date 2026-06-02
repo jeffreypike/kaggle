@@ -194,7 +194,7 @@ test_probs = np.zeros((len(Xte), n_classes))
 for fold in range(5):
     tr = np.where(folds != fold)[0]; va = np.where(folds == fold)[0]
     print(f"=== fold {fold} ===", flush=True)
-    enc = TargetEncoder(cv=5, smooth="auto", shuffle=True, random_state=42)
+    enc = make_target_encoder(42)
     tr_te = enc.fit_transform(Xtr.iloc[tr][combos], y[tr]).astype(np.float32)
     va_te = enc.transform(Xtr.iloc[va][combos]).astype(np.float32)
     te_te = enc.transform(Xte[combos]).astype(np.float32)

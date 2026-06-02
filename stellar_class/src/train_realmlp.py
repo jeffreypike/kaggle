@@ -137,6 +137,17 @@ class NumericalPreprocessor(BaseEstimator, TransformerMixin):
         return X
 
 
+def make_target_encoder(seed):
+    """Version-robust TargetEncoder: sklearn >=1.9 deprecated shuffle/random_state in
+    favour of passing a CV splitter as `cv`; <1.9 only accepts an int."""
+    import sklearn
+    from sklearn.model_selection import KFold
+    skl = tuple(int(x) for x in sklearn.__version__.split(".")[:2])
+    if skl >= (1, 9):
+        return TargetEncoder(cv=KFold(5, shuffle=True, random_state=seed), smooth="auto")
+    return TargetEncoder(cv=5, smooth="auto", shuffle=True, random_state=seed)
+
+
 # ── NNX model components ───────────────────────────────────────────────────────
 class PReLU(nnx.Module):
     def __init__(self, init=0.25):
@@ -397,7 +408,7 @@ def main(smoke=False, rows=6000, epochs=1, seed=None):
         print(f"=== fold {fold} ===", flush=True)
         # Per-fold target encoding of the categorical combos -> extra numeric features
         # (fit on this fold's train only; no leakage). Matches the reference's TE=True.
-        enc = TargetEncoder(cv=5, smooth="auto", shuffle=True, random_state=cfg["seed"])
+        enc = make_target_encoder(cfg["seed"])
         tr_te = enc.fit_transform(Xtr.iloc[tr][combos], y[tr]).astype(np.float32)
         va_te = enc.transform(Xtr.iloc[va][combos]).astype(np.float32)
         te_te = enc.transform(Xte[combos]).astype(np.float32)
