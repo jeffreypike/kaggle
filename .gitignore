@@ -235,3 +235,4 @@ AutogluonModels/
 
 # Dedicated AutoGluon+ray env (Python 3.12)
 .venv-ag/
+.DS_Store
