@@ -74,7 +74,8 @@ def evaluate_predictions(y_true, y_pred_proba, classes):
 
     cm = confusion_matrix(y_true, y_pred, labels=labels, normalize="true")
     print("Row-Normalized Confusion Matrix (Recall):")
-    print(f"{'True \\ Pred':<12} | " + " | ".join(f"{c:<8}" for c in classes))
+    hdr = "True \\ Pred"  # kept out of the f-string expr (backslash-in-{} needs py3.12+)
+    print(f"{hdr:<12} | " + " | ".join(f"{c:<8}" for c in classes))
     print("-" * (15 + 11 * len(classes)))
     for i, true_class in enumerate(classes):
         row = " | ".join(f"{cm[i, j]:.4f}" for j in range(len(classes)))
