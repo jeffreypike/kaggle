@@ -30,7 +30,7 @@ from sklearn.metrics import balanced_accuracy_score
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from validation import (load_data_with_folds, get_custom_cv, evaluate_predictions,
-                        save_oof_predictions, save_submission, tune_class_weights, DATA_DIR)
+                        save_oof_predictions, save_submission, tune_class_weights, DATA_DIR, PREDICTIONS_DIR)
 
 PI = math.pi
 
@@ -143,7 +143,7 @@ class PReLU(nnx.Module):
         self.a = nnx.Param(jnp.asarray(init, jnp.float32))
 
     def __call__(self, x):
-        return jnp.where(x >= 0, x, self.a.value * x)
+        return jnp.where(x >= 0, x, self.a[...] * x)
 
 
 class NTPLinear(nnx.Module):
@@ -153,9 +153,9 @@ class NTPLinear(nnx.Module):
         self.bias = nnx.Param(jax.random.normal(rngs.params(), (n_ens, out_f))) if bias else None
 
     def __call__(self, x):
-        x = jnp.einsum("bki,kio->bko", x, self.weight.value) / jnp.sqrt(self.in_f)
+        x = jnp.einsum("bki,kio->bko", x, self.weight[...]) / jnp.sqrt(self.in_f)
         if self.bias is not None:
-            x = x + self.bias.value[None]
+            x = x + self.bias[...][None]
         return x
 
 
@@ -164,7 +164,7 @@ class ScalingLayer(nnx.Module):
         self.scale = nnx.Param(jnp.ones((n_ens, n_features)))
 
     def __call__(self, x):
-        return x * self.scale.value[None]
+        return x * self.scale[...][None]
 
 
 class PBLDEmbedding(nnx.Module):
@@ -177,8 +177,8 @@ class PBLDEmbedding(nnx.Module):
         self.act = PReLU()
 
     def __call__(self, x):  # (batch, n_ens, n_features)
-        periodic = jnp.cos(2 * PI * (x[..., None] * self.w1.value[None] + self.b1.value[None]))
-        transformed = self.act(jnp.einsum("bkfh,kfhd->bkfd", periodic, self.w2.value) + self.b2.value[None])
+        periodic = jnp.cos(2 * PI * (x[..., None] * self.w1[...][None] + self.b1[...][None]))
+        transformed = self.act(jnp.einsum("bkfh,kfhd->bkfd", periodic, self.w2[...]) + self.b2[...][None])
         feat = jnp.concatenate([x[..., None], transformed], axis=-1)
         return feat.reshape(x.shape[0], x.shape[1], -1)
 
@@ -201,7 +201,7 @@ class CategoricalFeatureLayer(nnx.Module):
             feats.append(jax.nn.one_hot(x[:, :, i], self.oh_dims[j], dtype=jnp.float32))
         kk = jnp.arange(self.n_ens)[None, :]               # (1, n_ens)
         for emb, i in zip(self.embeds, self.em_idx):
-            feats.append(emb.value[kk, x[:, :, i]])         # (batch, n_ens, embed_dim)
+            feats.append(emb[...][kk, x[:, :, i]])         # (batch, n_ens, embed_dim)
         return jnp.concatenate(feats, axis=2) if feats else jnp.zeros((x.shape[0], self.n_ens, 0))
 
 
@@ -333,7 +333,7 @@ def fit_fold(Xtr_n, Xtr_c, ytr, Xva_n, Xva_c, yva, cat_dims, n_classes, cfg):
     ytr_j = jnp.asarray(ytr)
     key = jax.random.key(cfg["seed"])
     order = np.arange(len(ytr))
-    best_score, best_probs = -np.inf, None
+    best_score, best_probs, best_state = -np.inf, None, None
     bs = cfg["train_bs"]
     for epoch in range(cfg["epochs"]):
         for start in range(0, len(ytr), bs):
@@ -349,7 +349,9 @@ def fit_fold(Xtr_n, Xtr_c, ytr, Xva_n, Xva_c, yva, cat_dims, n_classes, cfg):
         score = balanced_accuracy_score(yva, probs.argmax(1))
         if score > best_score:
             best_score, best_probs = score, probs
+            best_state = jax.tree.map(jnp.copy, nnx.state(model))   # snapshot best-epoch weights
         print(f"    epoch {epoch+1}/{cfg['epochs']}  val_bal_acc={score:.5f}  best={best_score:.5f}", flush=True)
+    nnx.update(model, best_state)                                   # restore best for test prediction
     return best_probs, best_score, model
 
 
@@ -389,10 +391,17 @@ def main(smoke=False, rows=6000, epochs=1):
     test_probs = np.zeros((len(Xte), n_classes))
     for fold, (tr, va) in enumerate(cv):
         print(f"=== fold {fold} ===", flush=True)
-        pre = NumericalPreprocessor(cfg["tfms"]).fit(Xtr.iloc[tr][num_cols].values.astype(np.float32))
-        Xtr_n = pre.transform(Xtr.iloc[tr][num_cols].values.astype(np.float32))
-        Xva_n = pre.transform(Xtr.iloc[va][num_cols].values.astype(np.float32))
-        Xte_n = pre.transform(Xte[num_cols].values.astype(np.float32))
+        # Per-fold target encoding of the categorical combos -> extra numeric features
+        # (fit on this fold's train only; no leakage). Matches the reference's TE=True.
+        enc = TargetEncoder(cv=5, smooth="auto", shuffle=True, random_state=cfg["seed"])
+        tr_te = enc.fit_transform(Xtr.iloc[tr][combos], y[tr]).astype(np.float32)
+        va_te = enc.transform(Xtr.iloc[va][combos]).astype(np.float32)
+        te_te = enc.transform(Xte[combos]).astype(np.float32)
+        num_tr = np.hstack([Xtr.iloc[tr][num_cols].values.astype(np.float32), tr_te])
+        num_va = np.hstack([Xtr.iloc[va][num_cols].values.astype(np.float32), va_te])
+        num_te = np.hstack([Xte[num_cols].values.astype(np.float32), te_te])
+        pre = NumericalPreprocessor(cfg["tfms"]).fit(num_tr)
+        Xtr_n, Xva_n, Xte_n = pre.transform(num_tr), pre.transform(num_va), pre.transform(num_te)
         clip = np.array(cat_dims) - 1
         Xtr_c = np.clip(Xtr.iloc[tr][cat_cols].values.astype(np.int64), 0, clip)
         Xva_c = np.clip(Xtr.iloc[va][cat_cols].values.astype(np.int64), 0, clip)
@@ -409,6 +418,7 @@ def main(smoke=False, rows=6000, epochs=1):
     weights, tuned = tune_class_weights(y, oof)
     print(f"Balanced accuracy after class-weight tuning: {tuned:.5f}  (weights={dict(zip(classes, weights.round(3)))})")
     save_oof_predictions(oof, "realmlp")
+    np.save(PREDICTIONS_DIR / "test_realmlp.npy", test_probs)   # for blended submissions
     preds = np.asarray(classes)[(test_probs * weights).argmax(1)]
     save_submission(test_df["id"], preds, "submission_realmlp.csv")
 
