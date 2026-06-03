@@ -73,7 +73,7 @@ def load_base(kind, path, ids, n):
     raise ValueError(kind)
 
 
-def main(use_tabpfn, subsample, n_estimators):
+def main(use_tabpfn, subsample, n_estimators, devices="cuda"):
     df = load_data_with_folds().to_pandas()
     test = pd.read_csv(DATA_DIR / "test.csv")
     ids = df["id"].to_numpy(); y = df["class"].map(TMAP).to_numpy(); folds = df["fold"].to_numpy()
@@ -124,14 +124,19 @@ def main(use_tabpfn, subsample, n_estimators):
         return
 
     # ── TabPFN-3 meta (CUDA) — fit on all train, predict test (philippsinger's recipe) ──
+    # NOTE: TabPFN is PyTorch/CUDA only — no TPU. On Kaggle GPU T4x2 pass --devices cuda:0,cuda:1
+    # (32GB total → full 577k context, no subsample needed); on a single 10GB 3080 use --subsample.
     from tabpfn import TabPFNClassifier
+    dev = devices.split(",") if "," in devices else devices
     fit_idx = np.arange(N)
     if subsample and subsample < N:
         rng = np.random.RandomState(42)
-        # stratified-ish subsample of the fit context to fit 10GB VRAM
+        # stratified-ish subsample of the fit context to fit limited VRAM
         fit_idx = rng.choice(N, subsample, replace=False)
         print(f"TabPFN fit context subsampled to {subsample:,} rows", flush=True)
-    clf = TabPFNClassifier(device="cuda", n_estimators=n_estimators, balance_probabilities=True)
+    def make_clf():
+        return TabPFNClassifier(device=dev, n_estimators=n_estimators, balance_probabilities=True)
+    clf = make_clf()
     clf.fit(Xtr[fit_idx], y[fit_idx])
     test_prob = clf.predict_proba(Xte)
 
@@ -141,7 +146,7 @@ def main(use_tabpfn, subsample, n_estimators):
         tr = np.where(folds != k)[0]; va = np.where(folds == k)[0]
         if subsample and subsample < len(tr):
             tr = np.random.RandomState(k).choice(tr, subsample, replace=False)
-        c = TabPFNClassifier(device="cuda", n_estimators=n_estimators, balance_probabilities=True)
+        c = make_clf()
         c.fit(Xtr[tr], y[tr]); tabpfn_oof[va] = c.predict_proba(Xtr[va])
         print(f"  tabpfn fold {k} done", flush=True)
     w_tp, t_tp = tune_class_weights(y, tabpfn_oof)
@@ -159,5 +164,7 @@ if __name__ == "__main__":
     ap.add_argument("--no-tabpfn", action="store_true", help="LogReg-logit only (no CUDA)")
     ap.add_argument("--subsample", type=int, default=0, help="cap TabPFN fit context rows (VRAM)")
     ap.add_argument("--n-estimators", type=int, default=2)
+    ap.add_argument("--devices", default="cuda",
+                    help="TabPFN device(s): 'cuda' (single), or 'cuda:0,cuda:1' for Kaggle T4x2")
     args = ap.parse_args()
-    main(not args.no_tabpfn, args.subsample, args.n_estimators)
+    main(not args.no_tabpfn, args.subsample, args.n_estimators, args.devices)
