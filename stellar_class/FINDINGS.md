@@ -1,0 +1,65 @@
+# Stellar Classification (Playground Series S6E6) — Findings & Experiment Log
+
+Competition: predict stellar `class` ∈ {GALAXY, QSO, STAR} from photometric/spectroscopic
+features. Metric: **balanced accuracy** (imbalanced classes). Synthetic data generated from
+the [Stellar Classification Dataset – SDSS17](https://www.kaggle.com/datasets/fedesoriano/stellar-classification-dataset-sdss17).
+
+## Best result
+- **LB 0.97024 (~4th, early)** — blend of RealMLP-8seed ensemble (0.65) + AutoGluon (0.35), class-weight tuned.
+- RealMLP 8-seed ensemble **solo: LB 0.96998** (≈0.969 OOF).
+
+## Methodology (what makes our numbers trustworthy)
+- **Standardized 5-fold OOF** (`StratifiedKFold(5, shuffle, seed=42)`, `validation.load_data_with_folds`) shared by every model → OOFs are directly comparable and stackable.
+- **CV↔LB is tight and trustworthy.** Tuned OOF tracks the public LB; LB has landed **~+0.0007–0.0009 above tuned CV** every time. Adversarial-validation AUC ≈ 0.50 (no train/test drift) predicted this.
+- **Trust the full-577k OOF for ranking;** the public LB is a *subset* of test, so treat ±0.0002–0.0003 LB moves as noise. Don't optimize the public LB.
+- **Class-weight tuning** (`validation.tune_class_weights`: per-class probability multipliers maximizing balanced accuracy) generalizes (~+0.009, held on LB).
+
+## What worked ✅
+| Lever | Effect |
+|---|---|
+| **RealMLP-TD** (Flax NNX port of `yekenot/ps-s6-e6-realmlp-pytorch`) | The top single model for this data |
+| **Seed-ensembling** (8 seeds, parallel on TPU v5e-8 via `pmap`, ~12 min) | +0.0017 over single seed |
+| **FE: 6 color pairs** (u-g, u-r, g-r, r-i, i-z, g-i) | +~0.0006 LB |
+| Class-weight tuning | +~0.009 |
+
+## What didn't (tested and ruled out) ❌
+| Lever | Result |
+|---|---|
+| **HPO** (wide/deep/epochs/dropout/n_ens) | Helped single-seed (+0.0011) but **tied at the 8-seed ensemble** (−0.0001). Single-seed HPO doesn't transfer — the ensemble already handles variance. |
+| More colors (10 pairs), redshift ratios, abs-mag/distance-modulus proxies | Flat or hurt (redshift's near-zero tail makes ratios noisy) |
+| **External SDSS17 data** as extra training rows | Hurts (−0.0012) — distribution shift vs the synthetic test |
+| FE for GBDTs | Flat — trees already recover colors/interactions |
+| **Cross-family blending** (AutoGluon / TabPFN / LGB as blend members) | Saturated; TabPFN 3rd member +0.00007. As RealMLP improved, AG blend stopped helping (solo ≈ blend). |
+| **Pseudo-labeling** (confident test rows, leak-free CV) | No effect (−0.00002). 577k same-distribution labels + ~60% of test confidently labeled = redundant easy rows. |
+
+## Single-model OOF (tuned balanced accuracy)
+| Model | tuned OOF | LB |
+|---|---|---|
+| Manual LightGBM | 0.96437 | — |
+| FLAML (lgbm) | 0.96488 | — |
+| AutoGluon best_quality | 0.96546 | 0.966 |
+| TabPFN-3 | 0.96305 | ~0.964 |
+| RealMLP single-seed | 0.96761 | — |
+| RealMLP 8-seed ensemble | 0.96908 | 0.96998 |
+| **RealMLP-8seed + AutoGluon blend** | **0.96945** | **0.97024** |
+
+## Reproduce
+- **RealMLP (main model):** `notebooks/stellar-realmlp-tpu.ipynb` (Kaggle TPU v5e-8, 8 seeds in parallel) → `oof_realmlp_ens.npy`, `test_realmlp_ens.npy`, `submission.csv`. Local single-device: `src/train_realmlp.py`.
+- **AutoGluon:** `src/train_autogluon.py --preset best_quality` (or reload the saved predictor; reloading a bagged predictor deadlocks on ray — init `ray.init(local_mode=True)` first).
+- **Blend:** `python src/blend.py realmlp_ens autogluon_best_quality` → writes the blended submission from saved OOF + test probs.
+- **Screens:** `src/hpo_realmlp.py` (config), and the FE/pseudo screens. All judge candidates on the standardized OOF.
+- Other models: `src/train_lgb.py`, `src/train_automl.py` (FLAML), `src/train_tabpfn.py` (needs a CUDA GPU).
+
+## Status / next
+Search space is **mapped and mostly exhausted**; the model is well-optimized at ~0.970.
+Suggested 2 final submissions: the **0.97024 blend** + the **0.96998 RealMLP-solo** (most
+diverse strong pair). Re-engage when there's new signal (rising LB to defend, or a new
+strong public notebook — the discussion board is the best source; it's how RealMLP and
+TabPFN were found). Remaining ideas are marginal (more seeds; blending diverse RealMLP
+*config* variants).
+
+## Environment gotchas
+- `setuptools >= 81` removed `pkg_resources` → AutoGluon silently drops XGBoost/CatBoost. Pin `setuptools < 81`.
+- Kaggle sklearn ≥ 1.9 deprecates `TargetEncoder(shuffle=, random_state=)` → pass a CV splitter (`make_target_encoder` handles both).
+- 3080 box: needs `polars-lts-cpu` (no AVX2) and Python < 3.12 (f-string backslash); TabPFN test prediction must be batched (cuBLAS limit at 247k rows).
+- ray has no Python 3.13 wheel → AutoGluon+ray runs in a separate 3.12 env (`.venv-ag`).
