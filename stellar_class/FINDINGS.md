@@ -81,8 +81,17 @@ the [Stellar Classification Dataset – SDSS17](https://www.kaggle.com/datasets/
     [logits + raw feats], runs LogReg-logit ref (CPU) + TabPFN-3 meta (CUDA, `--subsample` for 10GB
     VRAM), writes submission + saves stacker OOF/test. `--no-tabpfn` already produced
     `submission_stack_logreg.csv` (0.96975 OOF) — submittable now without a GPU.
-  - NEXT: (1) submit `submission_stack_logreg.csv` for an LB read; (2) run TabPFN-3 meta on the 3080
-    (should beat LogReg). TabM is already in the pulled pool, so re-training our own is redundant.
+  - **LB RESULT (2026-06-03): LogReg stack = 0.96990 public LB** — *below* our banked 0.97024 blend.
+    Offset was only +0.00015 (CV 0.96975), vs our own-model history of +0.0007–0.0009. Test alignment
+    ruled out as the cause (all bases agree 0.978–0.995 on test argmax). The CV gain didn't translate —
+    LogReg likely fit OOF-specific quirks in the borrowed base preds (CV up, LB flat). **Lesson: don't
+    project the +0.0008 offset onto borrowed-base stacks; their offset is ~+0.0002.**
+  - **Leaderboard target (2026-06-03): public LB top = 0.97076 (cluster of 6+ teams), Deotte 0.97070.**
+    That identical-score cluster = everyone running the public TabPFN-3 stacker. So the **meta-model is
+    the lever**: same bases, LogReg 0.96990 vs TabPFN ~0.97076 ≈ +0.0008 from the meta alone.
+  - NEXT: (1) run the **TabPFN-3 meta** (`src/stack_tabpfn.py`, 3080) — expect ~0.9707, +0.0005 over our
+    0.97024, joins the top cluster. (2) To *beat* the cluster (TabPFN-on-public-bases is what everyone
+    has), we need a base they lack → the ensemble-HPO search for a *distinct* RealMLP. TabM already in pool.
 - **Heterogeneous ensemble** (config diversity instead of 8× same-config seeds): does varying
   width/depth/dropout across members decorrelate errors *beyond* what seeds already do?
   Screen: `src/diversity_screen.py` (full scale, GPU/TPU) measures config-vs-config OOF
