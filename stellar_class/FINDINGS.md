@@ -30,6 +30,7 @@ the [Stellar Classification Dataset – SDSS17](https://www.kaggle.com/datasets/
 | **External SDSS17 data** as extra training rows | Hurts (−0.0012) — distribution shift vs the synthetic test |
 | FE for GBDTs | Flat — trees already recover colors/interactions |
 | **Cross-family blending** (AutoGluon / TabPFN / LGB as blend members) | Saturated; TabPFN 3rd member +0.00007. As RealMLP improved, AG blend stopped helping (solo ≈ blend). |
+| **Full AutoGluon vs memory-trimmed AG** in the blend | Wash. The local AG run had skipped some models (XGB/CatBoost) under memory pressure; re-ran the full Kaggle AG and saved OOF/test. Full AG solo is −0.00012 (0.96534 vs 0.96546) and the RealMLP blend ties (0.96931 vs 0.96930, +0.00001; blend down-weights AG 0.40→0.35). AG OOF labels differ only 0.40%, final blend submissions differ on 0.15% of test rows — pure noise. Confirms the banked 0.97024 was *not* a memory-constrained compromise. |
 | **Pseudo-labeling** (confident test rows, leak-free CV) | No effect (−0.00002). 577k same-distribution labels + ~60% of test confidently labeled = redundant easy rows. |
 
 ## Single-model OOF (tuned balanced accuracy)
@@ -49,6 +50,18 @@ the [Stellar Classification Dataset – SDSS17](https://www.kaggle.com/datasets/
 - **Blend:** `python src/blend.py realmlp_ens autogluon_best_quality` → writes the blended submission from saved OOF + test probs.
 - **Screens:** `src/hpo_realmlp.py` (config), and the FE/pseudo screens. All judge candidates on the standardized OOF.
 - Other models: `src/train_lgb.py`, `src/train_automl.py` (FLAML), `src/train_tabpfn.py` (needs a CUDA GPU).
+
+## Open / in progress
+- **Heterogeneous ensemble** (config diversity instead of 8× same-config seeds): does varying
+  width/depth/dropout across members decorrelate errors *beyond* what seeds already do?
+  Screen: `src/diversity_screen.py` (full scale, GPU/TPU) measures config-vs-config OOF
+  disagreement against the seed-vs-seed baseline and compares a heterogeneous K-member blend
+  to a homogeneous one. Build the 8-distinct-member notebook only if configs decorrelate
+  clearly more *and* the heterogeneous blend wins.
+  - NOTE: `predictions/oof_realmlp_wide.npy` / `test_realmlp_wide.npy` are **byte-identical
+    copies of `realmlp_ens`** (verified by SHA), not a real wide-config ensemble — earlier
+    notes calling them a "diverse member candidate" were wrong. No saved second-config
+    ensemble exists; the screen has to train distinct configs from scratch.
 
 ## Status / next
 Search space is **mapped and mostly exhausted**; the model is well-optimized at ~0.970.
