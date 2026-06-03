@@ -52,6 +52,27 @@ the [Stellar Classification Dataset – SDSS17](https://www.kaggle.com/datasets/
 - Other models: `src/train_lgb.py`, `src/train_automl.py` (FLAML), `src/train_tabpfn.py` (needs a CUDA GPU).
 
 ## Open / in progress
+- **TabPFN-3 stacking (the current S6E6 meta — re-engaged after dropping 4th→28th overnight).**
+  Top solutions now use TabPFN-3 as a *stacker* (meta-model over diverse base OOFs), not as a
+  blend member (which we'd ruled out). Read the actual notebook `philippsinger/tabpfn-3-stacker`
+  (builds on `cdeotte/gpu-logistic-regression-stacker`): base OOFs → **logits** (`log(p/(1-p))`,
+  ±30) → append **raw original features** → `TabPFNClassifier(n_estimators=2, balance_probabilities=True)`
+  fit on all 577k, predict test. Bases: XGB×2, CatBoost, RealMLP×2 (yekenot + Deotte), **TabM**.
+  - **Key finding: our bottleneck was base *diversity*, not the meta-model.** Their exact recipe
+    (logits, +raw feats) on *our* OOFs goes nowhere (LogReg-logit 0.96926 ≤ our 0.96946 ceiling) —
+    because our bases are correlated (AutoGluon's OOF is itself an XGB/Cat/LGB/NN stack, so
+    AG+LGB+FLAML ≈ one GBDT signal). A stacker can only exploit diversity present in its inputs.
+  - **Offline LogReg-logit on the 6 public diverse bases (alignment SHA/label-verified):**
+    public-only **0.96966**, + our RealMLP 0.96968, + our RealMLP + AG + raw feats **0.96975** —
+    vs our 0.96946 ceiling. Projects to ~0.9705–0.9706 LB (offset +0.0007–0.0009; but borrowed-base
+    fold misalignment could add slight CV optimism — **LB is the arbiter**). Our RealMLP-8seed adds
+    only +0.00002 (redundant with their two RealMLPs).
+  - `src/stack_tabpfn.py`: fetches the 6 public base OOFs via Kaggle API, adds our RealMLP, builds
+    [logits + raw feats], runs LogReg-logit ref (CPU) + TabPFN-3 meta (CUDA, `--subsample` for 10GB
+    VRAM), writes submission + saves stacker OOF/test. `--no-tabpfn` already produced
+    `submission_stack_logreg.csv` (0.96975 OOF) — submittable now without a GPU.
+  - NEXT: (1) submit `submission_stack_logreg.csv` for an LB read; (2) run TabPFN-3 meta on the 3080
+    (should beat LogReg). TabM is already in the pulled pool, so re-training our own is redundant.
 - **Heterogeneous ensemble** (config diversity instead of 8× same-config seeds): does varying
   width/depth/dropout across members decorrelate errors *beyond* what seeds already do?
   Screen: `src/diversity_screen.py` (full scale, GPU/TPU) measures config-vs-config OOF
