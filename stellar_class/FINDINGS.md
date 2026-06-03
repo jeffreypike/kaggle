@@ -62,6 +62,13 @@ the [Stellar Classification Dataset – SDSS17](https://www.kaggle.com/datasets/
   validated trainer/data cells verbatim. Model-HP scope only (FE fixed). Rank offline by tuned OOF
   *and* by marginal stack contribution (the metric that matters now — a config that's *more distinct*
   beats one that's marginally better solo, since our RealMLP is redundant with the pool's two RealMLPs).
+  - **RESULT (2026-06-03, 10 configs, 8-seed ensembles on TPU):** SOLO is exhausted — `ref` [512]³ wins
+    (0.96908), every variant within 0.0001 and ≤ ref; the 8-seed ensemble fully absorbs config differences.
+    BUT by **marginal stack contribution** the order flips: `bs128` (worse solo, 0.96895) adds **+0.00012**
+    to the public-base LogReg stack vs `ref` +0.00006 and our ens +0.00002 — small batch → more distinct →
+    less redundant. Best pair **`bs128`+`ls0.08` = 0.96983** (public-only 0.96966; public+our-ens 0.96968).
+    **Our contributed stack bases are `bs128`+`ls0.08`, not the ref ensemble.** Gain small (+0.00017 CV),
+    matters only through the TabPFN meta, but it's non-redundant signal others lack.
 - **TabPFN-3 stacking (the current S6E6 meta — re-engaged after dropping 4th→28th overnight).**
   Top solutions now use TabPFN-3 as a *stacker* (meta-model over diverse base OOFs), not as a
   blend member (which we'd ruled out). Read the actual notebook `philippsinger/tabpfn-3-stacker`
