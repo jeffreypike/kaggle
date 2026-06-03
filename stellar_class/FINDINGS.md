@@ -52,6 +52,16 @@ the [Stellar Classification Dataset – SDSS17](https://www.kaggle.com/datasets/
 - Other models: `src/train_lgb.py`, `src/train_automl.py` (FLAML), `src/train_tabpfn.py` (needs a CUDA GPU).
 
 ## Open / in progress
+- **8-seed-ensemble HPO (redo of the flawed single-seed search).** Our earlier "HPO doesn't
+  transfer" verdict came from single-seed runs — the *wrong* level, since a seed-ensemble absorbs
+  single-seed variance (that's literally why the gains vanished). The TPU trains an 8-seed ensemble
+  in ~10 min, so searching at the ensemble level is ~2 h, not prohibitive. `scripts/build_realmlp_hpo_nb.py`
+  → `notebooks/stellar-realmlp-hpo-tpu.ipynb`: loops ~10 single-axis configs (width/depth/epochs/
+  dropout/ls/bs), trains each as a full 8-seed×5-fold ensemble, saves per-config `oof_realmlp_<name>.npy`
+  /`test_realmlp_<name>.npy` + `hpo_results.csv` (saves as each finishes → timeout-safe). Reuses the
+  validated trainer/data cells verbatim. Model-HP scope only (FE fixed). Rank offline by tuned OOF
+  *and* by marginal stack contribution (the metric that matters now — a config that's *more distinct*
+  beats one that's marginally better solo, since our RealMLP is redundant with the pool's two RealMLPs).
 - **TabPFN-3 stacking (the current S6E6 meta — re-engaged after dropping 4th→28th overnight).**
   Top solutions now use TabPFN-3 as a *stacker* (meta-model over diverse base OOFs), not as a
   blend member (which we'd ruled out). Read the actual notebook `philippsinger/tabpfn-3-stacker`
