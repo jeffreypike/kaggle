@@ -93,9 +93,17 @@ def main(use_tabpfn, subsample, n_estimators, devices="cuda"):
 
     # add our two *distinct* RealMLP bases. The HPO screen showed these (worse solo, but more
     # decorrelated from the pool's two RealMLPs) contribute more to the stack than our ref ensemble
-    # (bs128 +0.00012 / ls0.08 vs ref +0.00006; pair best). Falls back to realmlp_ens if not present.
+    # (bs128 +0.00012 / ls0.08 vs ref +0.00006; pair best). predictions/ is gitignored, so on a fresh
+    # box (e.g. the 3080) these aren't present — pull them from our Kaggle dataset; else fall back to ens.
     OUR = [("our_bs128", "oof_realmlp_bs128.npy", "test_realmlp_bs128.npy"),
            ("our_ls008", "oof_realmlp_ls0.08.npy", "test_realmlp_ls0.08.npy")]
+    if not all((PREDICTIONS_DIR / o).exists() for _, o, _ in OUR):
+        ds = f"{os.environ.get('KAGGLE_USERNAME', 'jeffreypikeai')}/s6e6-realmlp-distinct"
+        print(f"distinct bases not local — downloading {ds} …", flush=True)
+        try:
+            subprocess.run(["kaggle", "datasets", "download", "-d", ds, "-p", str(PREDICTIONS_DIR), "--unzip"], check=True)
+        except Exception as e:
+            print(f"[!] dataset fetch failed ({e}); falling back to realmlp_ens", flush=True)
     if not all((PREDICTIONS_DIR / o).exists() for _, o, _ in OUR):
         OUR = [("our_realmlp", "oof_realmlp_ens.npy", "test_realmlp_ens.npy")]
     for nm, oof_f, test_f in OUR:
