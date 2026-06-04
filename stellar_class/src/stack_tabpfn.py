@@ -91,11 +91,18 @@ def main(use_tabpfn, subsample, n_estimators, devices="cuda"):
         print(f"  base {name:9s} solo tuned={tune_class_weights(y, o)[1]:.5f}  (test rows {t.shape[0]})", flush=True)
         oof_parts.append(logit(o)); test_parts.append(logit(t)); names.append(name)
 
-    # add our RealMLP-8seed (strong, independent) as an extra base
-    our = np.load(PREDICTIONS_DIR / "oof_realmlp_ens.npy").astype(np.float64)
-    our_t = np.load(PREDICTIONS_DIR / "test_realmlp_ens.npy").astype(np.float64)
-    oof_parts.append(logit(our)); test_parts.append(logit(our_t)); names.append("our_realmlp")
-    print(f"  base {'our_realmlp':9s} solo tuned={tune_class_weights(y, our)[1]:.5f}")
+    # add our two *distinct* RealMLP bases. The HPO screen showed these (worse solo, but more
+    # decorrelated from the pool's two RealMLPs) contribute more to the stack than our ref ensemble
+    # (bs128 +0.00012 / ls0.08 vs ref +0.00006; pair best). Falls back to realmlp_ens if not present.
+    OUR = [("our_bs128", "oof_realmlp_bs128.npy", "test_realmlp_bs128.npy"),
+           ("our_ls008", "oof_realmlp_ls0.08.npy", "test_realmlp_ls0.08.npy")]
+    if not all((PREDICTIONS_DIR / o).exists() for _, o, _ in OUR):
+        OUR = [("our_realmlp", "oof_realmlp_ens.npy", "test_realmlp_ens.npy")]
+    for nm, oof_f, test_f in OUR:
+        o = np.load(PREDICTIONS_DIR / oof_f).astype(np.float64)
+        t = np.load(PREDICTIONS_DIR / test_f).astype(np.float64)
+        oof_parts.append(logit(o)); test_parts.append(logit(t)); names.append(nm)
+        print(f"  base {nm:9s} solo tuned={tune_class_weights(y, o)[1]:.5f}")
 
     # raw original features appended to the logit stack (TabPFN can use them without overfitting)
     feat_cols = ["alpha", "delta", "u", "g", "r", "i", "z", "redshift"]
