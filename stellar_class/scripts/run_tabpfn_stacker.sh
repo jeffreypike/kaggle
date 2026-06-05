@@ -14,21 +14,17 @@ export KAGGLE_API_TOKEN="${KAGGLE_KEY:-${KAGGLE_API_TOKEN:-}}"
 USER="${KAGGLE_USERNAME:?KAGGLE_USERNAME not set in ../.env}"
 KG() { uv run --no-project --with kaggle kaggle "$@"; }
 
-DS="$USER/s6e6-realmlp-distinct"
-FILES=(oof_realmlp_bs128.npy test_realmlp_bs128.npy "oof_realmlp_ls0.08.npy" "test_realmlp_ls0.08.npy")
+DS="$USER/s6e6-stack-bases"
+STAGE_BASES="/tmp/stack_bases"
 
 do_dataset() {
-  local d; d="$(mktemp -d)"
-  for f in "${FILES[@]}"; do cp "$ROOT/predictions/$f" "$d/"; done
-  cat > "$d/dataset-metadata.json" <<JSON
-{ "title": "s6e6-realmlp-distinct", "id": "$DS", "licenses": [{ "name": "CC0-1.0" }] }
-JSON
+  # normalize all base predictions into /tmp/stack_bases, then create/version the dataset
+  uv run --no-project python "$ROOT/scripts/build_stack_bases.py"
   if KG datasets files "$DS" >/dev/null 2>&1; then
-    echo "dataset exists -> new version"; KG datasets version -p "$d" -m "refresh distinct RealMLP bases" --dir-mode zip
+    echo "dataset exists -> new version"; KG datasets version -p "$STAGE_BASES" -m "refresh stack bases" --dir-mode zip
   else
-    echo "creating dataset $DS (private)"; KG datasets create -p "$d" --dir-mode zip
+    echo "creating dataset $DS (private)"; KG datasets create -p "$STAGE_BASES" --dir-mode zip
   fi
-  rm -rf "$d"
 }
 
 do_push() {
@@ -44,12 +40,8 @@ do_push() {
   "enable_gpu": true,
   "enable_internet": true,
   "competition_sources": ["playground-series-s6e6"],
-  "dataset_sources": ["$DS"],
-  "kernel_sources": [
-    "cdeotte/xgb-v0-for-s6e6", "cdeotte/xgb-v1-for-s6e6",
-    "yekenot/ps-s6-e6-realmlp-pytorch", "cdeotte/realmlp-v1-for-s6e6",
-    "donmarch14/s6e6-tabm", "cdeotte/cat-v0-for-s6e6"
-  ],
+  "dataset_sources": ["$USER/s6e6-stack-bases"],
+  "kernel_sources": [],
   "model_sources": []
 }
 JSON
