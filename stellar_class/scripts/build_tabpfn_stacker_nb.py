@@ -26,15 +26,17 @@ high-label-smoothing) that an offline screen showed are less redundant with the 
 `s6e6-stack-bases` dataset.""")
 
 M("## 1. Install TabPFN")
-C('''import sys, subprocess
-# --no-deps: do NOT let pip upgrade torch. The fresh tabpfn pulls a torch build whose CUDA
-# kernels don't match Kaggle's GPU ("no kernel image available for execution on the device").
-# Keep Kaggle's pre-installed (GPU-matched) torch; add only tabpfn's light pure-python deps.
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--no-deps", "tabpfn", "einops"], check=True)
-import torch
+C('''import sys, subprocess, torch
+# Pin Kaggle's pre-installed torch via a constraint so pip installs ALL of tabpfn's deps
+# (tabpfn_common_utils, einops, …) WITHOUT swapping torch for a build that can't run on the GPU.
+# NOTE: requires a T4 (sm_75) accelerator — Kaggle's torch 2.10 dropped Pascal/P100 (sm_60) support.
+open("/tmp/torch_constraint.txt", "w").write(f"torch=={torch.__version__}\\n")
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "tabpfn", "-c", "/tmp/torch_constraint.txt"], check=True)
 print("torch", torch.__version__, "| cuda", torch.version.cuda, "| device:",
       torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
-print("installed tabpfn (kept system torch)")''')
+cap = torch.cuda.get_device_capability(0) if torch.cuda.is_available() else (0, 0)
+assert cap >= (7, 0), f"GPU compute {cap} unsupported by torch {torch.__version__} — set accelerator to GPU T4 x2 (P100 won't work)"
+print("installed tabpfn")''')
 
 M("## 2. Imports + device + TabPFN-3 weights")
 C('''import os, glob, numpy as np, pandas as pd, torch

@@ -45,8 +45,8 @@ do_push() {
   "model_sources": ["prior-labsai/tabpfn-3/pyTorch/default/1"]
 }
 JSON
-  echo "pushing $USER/stellar-tabpfn-stacker (GPU)…"
-  KG kernels push -p "$d"
+  echo "pushing $USER/stellar-tabpfn-stacker (GPU=${ACCELERATOR:-NvidiaTeslaT4})…"
+  KG kernels push -p "$d" --accelerator "${ACCELERATOR:-NvidiaTeslaT4}"
   echo "  status : kaggle kernels status $USER/stellar-tabpfn-stacker"
   echo "  output : kaggle kernels output $USER/stellar-tabpfn-stacker -p predictions/"
   rm -rf "$d"
