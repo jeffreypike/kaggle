@@ -42,7 +42,7 @@ do_push() {
   "competition_sources": ["playground-series-s6e6"],
   "dataset_sources": ["$USER/s6e6-stack-bases"],
   "kernel_sources": [],
-  "model_sources": []
+  "model_sources": ["prior-labsai/tabpfn-3/pyTorch/default/1"]
 }
 JSON
   echo "pushing $USER/stellar-tabpfn-stacker (GPU)…"

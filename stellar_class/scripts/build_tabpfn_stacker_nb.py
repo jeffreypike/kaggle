@@ -30,9 +30,20 @@ C('''import sys, subprocess
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "tabpfn"], check=True)
 print("installed tabpfn")''')
 
-M("## 2. Imports + device")
-C('''import glob, numpy as np, pandas as pd, torch
+M("## 2. Imports + device + TabPFN-3 weights")
+C('''import os, glob, numpy as np, pandas as pd, torch
 from sklearn.metrics import balanced_accuracy_score
+# Use the TabPFN-3 weights from the added model input (avoids the gated HuggingFace download +
+# license prompt, which has no interactive terminal in a batch kernel). Point the cache dir at
+# the mounted model so .fit() finds the weights locally.
+_w = (glob.glob("/kaggle/input/**/tabpfn-3/**/*.ckpt", recursive=True)
+      or glob.glob("/kaggle/input/**/tabpfn*3*/**/*.ckpt", recursive=True)
+      or glob.glob("/kaggle/input/**/*.ckpt", recursive=True))
+if _w:
+    os.environ["TABPFN_MODEL_CACHE_DIR"] = os.path.dirname(_w[0])
+    print("TABPFN_MODEL_CACHE_DIR =", os.environ["TABPFN_MODEL_CACHE_DIR"])
+else:
+    print("WARNING: TabPFN-3 .ckpt not found under /kaggle/input — add the prior-labsai/tabpfn-3 model input")
 ndev = torch.cuda.device_count()
 DEVICE = [f"cuda:{i}" for i in range(ndev)] if ndev > 1 else ("cuda" if ndev == 1 else "cpu")
 print("CUDA devices:", ndev, "->", DEVICE)
