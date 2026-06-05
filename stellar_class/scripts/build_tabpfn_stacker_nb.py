@@ -27,8 +27,14 @@ high-label-smoothing) that an offline screen showed are less redundant with the 
 
 M("## 1. Install TabPFN")
 C('''import sys, subprocess
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "tabpfn"], check=True)
-print("installed tabpfn")''')
+# --no-deps: do NOT let pip upgrade torch. The fresh tabpfn pulls a torch build whose CUDA
+# kernels don't match Kaggle's GPU ("no kernel image available for execution on the device").
+# Keep Kaggle's pre-installed (GPU-matched) torch; add only tabpfn's light pure-python deps.
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--no-deps", "tabpfn", "einops"], check=True)
+import torch
+print("torch", torch.__version__, "| cuda", torch.version.cuda, "| device:",
+      torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
+print("installed tabpfn (kept system torch)")''')
 
 M("## 2. Imports + device + TabPFN-3 weights")
 C('''import os, glob, numpy as np, pandas as pd, torch
