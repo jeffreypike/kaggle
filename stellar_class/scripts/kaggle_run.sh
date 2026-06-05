@@ -28,6 +28,14 @@ case "$ACC" in gpu) gpu=true;; tpu) tpu=true;; cpu) ;; *) echo "accel must be gp
 
 STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
 cp "$NB" "$STAGE/"
+# headless push runs via papermill, which needs a kernelspec (interactive UI adds it; nbformat doesn't)
+uv run --no-project python - "$STAGE/$(basename "$NB")" <<'PY'
+import sys, nbformat as nbf
+p = sys.argv[1]; nb = nbf.read(p, as_version=4)
+nb.metadata.setdefault("kernelspec", {"name": "python3", "display_name": "Python 3", "language": "python"})
+nb.metadata.setdefault("language_info", {"name": "python"})
+nbf.write(nb, p)
+PY
 cat > "$STAGE/kernel-metadata.json" <<JSON
 {
   "id": "$USER/$SLUG",

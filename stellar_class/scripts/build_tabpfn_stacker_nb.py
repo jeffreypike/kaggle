@@ -115,5 +115,9 @@ print("wrote submission.csv + test_stack_tabpfn.npy")
 print("pred class dist:", dict(zip(*np.unique(preds, return_counts=True))))''')
 
 nb.cells = cells
+# headless `kaggle kernels push` runs via papermill, which requires a kernelspec
+# (the interactive UI fills this in automatically; nbformat does not).
+nb.metadata["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
+nb.metadata["language_info"] = {"name": "python"}
 nbf.write(nb, "notebooks/stellar-tabpfn-stacker.ipynb")
 print(f"wrote notebooks/stellar-tabpfn-stacker.ipynb ({len(cells)} cells)")
