@@ -8,6 +8,28 @@ the [Stellar Classification Dataset – SDSS17](https://www.kaggle.com/datasets/
 - **LB 0.97024 (~4th, early)** — blend of RealMLP-8seed ensemble (0.65) + AutoGluon (0.35), class-weight tuned.
 - RealMLP 8-seed ensemble **solo: LB 0.96998** (≈0.969 OOF).
 
+## Conclusion: the wall is the feature set, not the model (ceiling analysis, 2026-06-05)
+The competition is **saturated against the Bayes error of `P(class | ugriz + redshift + alpha,delta)`**,
+estimated at **~0.971 balanced accuracy** (diverse stack ≈0.970 OOF; LB cluster ≈0.97076). Everything
+piles up just under that number.
+- **Not a "single-model" ceiling** (that framing was wrong): an ensemble is just a function a single
+  expressive model can represent; ensembling only buys *variance reduction* toward the same target.
+  RealMLP (one architecture) lands ~0.969, ~0.001–0.002 short of the wall; ensembling/stacking closes
+  that gap by averaging variance, not by learning anything new.
+- **Errors are genuinely irreducible at the feature level.** 2.23% of rows are wrong in *every* strong
+  model; they concentrate at **low redshift** (median z 0.16 vs 0.50) where GALAXY/STAR/QSO photometry
+  overlaps. A 2nd-stage corrector given `RealMLP logits + raw features + colors` **cannot beat 0.96897**
+  (0.96852) — so RealMLP is already a near-Bayes estimator for these features.
+- **The within-zone "reducibility" was a mirage:** confident errors separate at AUC 0.86–0.93 within a
+  zone, but correcting them is net-negative under *balanced accuracy* (contaminants are a rare minority;
+  catching them costs more true-class recall than it gains). The +0.012 **oracle** number is invalid as a
+  ceiling — it routes using the label, so it sits *above* Bayes, not at a reachable target.
+- **Implication:** the only lever that moves the wall is a **new feature** that cracks the low-z overlap
+  — not a better model, more seeds, or stacking. Absent that, the field is at the wall and **final rank is
+  dominated by private-LB variance (chance)**; the "100s of OOFs + random stacker" meta only reduces your
+  own variance so you *reliably reach* the wall — it doesn't move it. The 6-team tie at exactly 0.97076 is
+  this in plain sight.
+
 ## Methodology (what makes our numbers trustworthy)
 - **Standardized 5-fold OOF** (`StratifiedKFold(5, shuffle, seed=42)`, `validation.load_data_with_folds`) shared by every model → OOFs are directly comparable and stackable.
 - **CV↔LB is tight and trustworthy.** Tuned OOF tracks the public LB; LB has landed **~+0.0007–0.0009 above tuned CV** every time. Adversarial-validation AUC ≈ 0.50 (no train/test drift) predicted this.
